@@ -9,12 +9,17 @@ def create_table():
     conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
 
-    # Create a table to store accounts
+    # Create a table to store accounts with additional information
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT,
-            password TEXT
+            password TEXT,
+            phone_number TEXT,
+            address TEXT,
+            national_number TEXT,                       
+            role TEXT
+
         )
     ''')
 
@@ -30,27 +35,34 @@ def account_exists(username):
 
     return account is not None
 
-
 def handle_client(client_socket):
     create_table()
 
     data = client_socket.recv(1024).decode("utf-8")
     request = json.loads(data)
-
     action = request.get("action")
     username = request.get("username")
     password = request.get("password")
 
     if action == "create_account":
-        conn = None  # Initialize conn here
+        conn = None
+        phone_number = request.get("phone_number")
+        address = request.get("address")
+        national_number = request.get("national_number")
+        role = request.get("role")
+
 
         try:
             if account_exists(username):
                 response = {"status": "Username already exists"}
             else:
+                
                 conn = sqlite3.connect(DATABASE_NAME)
                 cursor = conn.cursor()
-                cursor.execute('INSERT INTO accounts (username, password) VALUES (?, ?)', (username, password))
+                cursor.execute('''
+                    INSERT INTO accounts (username, password, phone_number, address, national_number,role)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (username, password, phone_number, address, national_number,role))
                 conn.commit()
                 response = {"status": "Account created successfully"}
         except sqlite3.Error as e:

@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import W, Checkbutton, IntVar, messagebox
+from tkinter import W, Checkbutton, IntVar, Radiobutton, messagebox
 import socket
 import json
 
@@ -108,8 +108,9 @@ entry_national_number.grid(row=6, column=1, padx=5, pady=5)
 
 entry_role = IntVar()
 
-Checkbutton(frame, text='student', variable=entry_role, onvalue=1, offvalue=0).grid(row=7, column=0, sticky=W)
-Checkbutton(frame, text='professor', variable=entry_role, onvalue=2, offvalue=0).grid(row=7, column=1, sticky=W)
+Radiobutton(frame, text='Student', variable=entry_role, value=1).grid(row=7, column=0, sticky=W)
+Radiobutton(frame, text='Professor', variable=entry_role, value=2).grid(row=7, column=1, sticky=W)
+entry_role.set(1)
 
 button_create_account = tk.Button(frame, text="Create Account", command=create_account)
 button_create_account.grid(row=8, column=0, pady=10)

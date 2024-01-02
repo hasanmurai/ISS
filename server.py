@@ -3,11 +3,9 @@ import socket
 import json
 import sqlite3
 import threading
-import tkinter as tk
-
-import rsa
+from asymmetric import *
 from auth import create_database, create_account, login, complete_information
-from _rsa_ import generate_rsa_keys, rsa_encrypt, rsa_decrypt , rsa_verify_signature
+
 from symmetric_key import symmetric_encryption, symmetric_decryption, hash_string
 from datetime import datetime
 
@@ -57,11 +55,11 @@ def handshake_server(client_socket, username):
         else:     
             user_public_key_str= data.get("client_public_key")
             
-            server_public_key_str=server_public_key.save_pkcs1().decode()
+            server_public_key_str=public_key_to_str(server_public_key)
             
             response = {'message':True, 'server_public_key':server_public_key_str}  
             client_socket.send(json.dumps(response).encode())       
-            session_key_recv(username,client_socket,server_private_key, user_public_key_str)
+            session_key_recv(username, client_socket, user_public_key_str)
 
 
     except Exception as e:
@@ -74,18 +72,20 @@ def handshake_server(client_socket, username):
 
 
 
-def session_key_recv(username,client_socket, server_private_key, user_public_key_str):
+def session_key_recv(username, client_socket, user_public_key_str):
     try:
 
-        request= client_socket.recv(2048).decode()
-
+        request= client_socket.recv(10000).decode()
         data= json.loads(request)
+        message= data.get("message")
+        message= asymmetric_decryption(message.encode('latin-1'), server_private_key)
 
-        if data.get("message"):
-            decrypt_session_key= data.get("session_key")
-            session_key= rsa_decrypt(base64.b64decode(decrypt_session_key), server_private_key)
+        if message == "True":
+            session_key= data.get("session_key")
+            session_key= asymmetric_decryption(session_key.encode('latin-1'), server_private_key)
             
             response= {"message":'accept, session started',"status": 200}
+
             response= symmetric_encryption(response, session_key.encode())
             print(f'start session with {username}')
             
@@ -97,6 +97,7 @@ def session_key_recv(username,client_socket, server_private_key, user_public_key
             if user_key:
                 cursor.execute('UPDATE users SET public_key=? WHERE username=?', (user_public_key_str, username))
                 conn.commit()
+            user_public_key= str_to_public_key(user_public_key_str)
                 
 
         else:
@@ -113,11 +114,11 @@ def session_key_recv(username,client_socket, server_private_key, user_public_key
         if conn:
             conn.close()
         client_socket.send(json.dumps(response).encode())
-        main_menu(client_socket, username, session_key,user_public_key_str)
+        main_menu(client_socket, username, session_key,user_public_key)
 
         
 ############################################################################################################
-def add_projects(client_socket, encrypted_projects, username, session_key,user_public_key_str):
+def add_projects(client_socket, encrypted_projects, username, session_key,user_public_key):
     try:
 
         conn = sqlite3.connect(DATABASE_NAME)
@@ -149,9 +150,9 @@ def add_projects(client_socket, encrypted_projects, username, session_key,user_p
     finally:
         conn.close()
         client_socket.send(json.dumps(response).encode())  
-        main_menu(client_socket, username,session_key,user_public_key_str)
+        main_menu(client_socket, username,session_key,user_public_key)
 
-def add_marks(client_socket,username,data,session_key,user_public_key_str):
+def add_marks(client_socket,username,data,session_key,user_public_key):
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
@@ -173,8 +174,8 @@ def add_marks(client_socket,username,data,session_key,user_public_key_str):
             merge_all_data= ' '.join([subject_name]+students_names+students_marks)
             
             hash_data= hash_string(merge_all_data)
-            user_public_key=rsa.PublicKey.load_pkcs1(user_public_key_str.encode())
-            verify_sign= rsa_verify_signature(hash_data,signature,user_public_key)
+            
+            verify_sign= verify_signature(hash_data, signature, user_public_key)
 
             if hash_data==hashed_data:
                 if verify_sign:
@@ -209,10 +210,10 @@ def add_marks(client_socket,username,data,session_key,user_public_key_str):
     finally:
         conn.close()
         client_socket.send(json.dumps(response).encode())
-        main_menu(client_socket, username, session_key,user_public_key_str)
+        main_menu(client_socket, username, session_key,user_public_key)
 
 
-def main_menu(client_socket, username, session_key,user_public_key_str):
+def main_menu(client_socket, username, session_key,user_public_key):
     while True:
         request= client_socket.recv(50000).decode()
         data= json.loads(request)
@@ -220,9 +221,9 @@ def main_menu(client_socket, username, session_key,user_public_key_str):
         print(f'{action} {username}')
         if action == 'send_project':
             encrypted_projects = data.get('projects')
-            add_projects(client_socket,encrypted_projects, username, session_key,user_public_key_str)
+            add_projects(client_socket,encrypted_projects, username, session_key,user_public_key)
         elif action == 'send_marks':
-            add_marks(client_socket,username,data,session_key,user_public_key_str) 
+            add_marks(client_socket,username,data,session_key,user_public_key) 
 
 
 def handle_client(client_socket):
@@ -262,8 +263,8 @@ def start_server():
 
     create_database()
     global server_public_key, server_private_key
-    server_public_key, server_private_key= generate_rsa_keys()
-    
+    server_private_key= generate_rsa_keys()
+    server_public_key= server_private_key.public_key()
     print("Server listening on port 5000")
     
     while True:

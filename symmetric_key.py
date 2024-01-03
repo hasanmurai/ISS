@@ -29,7 +29,7 @@ def symmetric_encryption(data, key):
         encrypted_data= []
     
         if isinstance(data[0],tuple):
-            encrypted_data=[(fernet.encrypt(x.encode()).decode(),fernet.encrypt(y.encode()).decode()) for x, y in data]
+            encrypted_data=[tuple(fernet.encrypt(value.encode()).decode() for value in tup) for tup in data]
         
         elif isinstance(data[0],str):
             encrypted_data=[fernet.encrypt(x.encode()).decode() for x in data]
@@ -57,7 +57,7 @@ def symmetric_decryption(encrypted_data, key):
         decrypted_data= []
         
         if isinstance(encrypted_data[0],tuple):
-            decrypted_data=[(fernet.decrypt(x).decode(),fernet.decrypt(y).decode()) for x, y in encrypted_data]
+            decrypted_data=[tuple(fernet.decrypt(value).decode() for value in tup) for tup in encrypted_data]
         
         elif isinstance(encrypted_data[0],str):
             decrypted_data=[fernet.decrypt(x).decode() for x in encrypted_data]

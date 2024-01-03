@@ -45,7 +45,8 @@ def create_database():
         CREATE TABLE IF NOT EXISTS subjects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             doctor_id INTEGER,
-            name TEXT,       
+            name TEXT,     
+            year TEXT,  
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE CASCADE
         

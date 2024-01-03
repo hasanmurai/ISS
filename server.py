@@ -45,30 +45,37 @@ def get_date():
 DATABASE_NAME="ISS.db"
 def handshake_server(client_socket, username):
     try:
-        disconnet=True
-        request = client_socket.recv(2048).decode()
+
+        request = client_socket.recv(8192).decode()
         data = json.loads(request)
-        disconnet=False
         if data.get('action')=='close':
             print(f"{data.get('username')} disconnet!")
             client_socket.close()
-        else:     
-            user_public_key_str= data.get("client_public_key")
-            
-            server_public_key_str=public_key_to_str(server_public_key)
-            
-            response = {'message':True, 'server_public_key':server_public_key_str}  
-            client_socket.send(json.dumps(response).encode())       
-            session_key_recv(username, client_socket, user_public_key_str)
-
+        else:
+            print(1)
+            client_certificate= data.get('certificate')
+            print(2)
+            client_certificate=x509.load_pem_x509_certificate(client_certificate.encode(), default_backend())    
+            print(3)
+            verify_client_cert=verify_certificate(client_certificate, server_certificate.public_key())
+            if verify_client_cert: 
+                print(4)
+                user_public_key_str= data.get("client_public_key")
+                
+                server_public_key_str=public_key_to_str(server_public_key)
+                
+                response = {'server_public_key':server_public_key_str,'status':200}  
+                client_socket.send(json.dumps(response).encode())       
+                session_key_recv(username, client_socket, user_public_key_str)
+            else:
+                response= {'message':'unvalid certificate','status':400}
 
     except Exception as e:
         response={"message": f"An error occurred: {str(e)}", "status":400}
     finally :
-        if disconnet:
-            client_socket.send(json.dumps(response).encode())       
-        else:
-            pass
+        
+        client_socket.send(json.dumps(response).encode())       
+        
 
 
 
@@ -118,14 +125,14 @@ def session_key_recv(username, client_socket, user_public_key_str):
 
         
 ############################################################################################################
-def add_projects(client_socket, encrypted_projects, username, session_key,user_public_key):
+def add_projects(client_socket, data, username, session_key,user_public_key):
     try:
 
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         cursor.execute('SELECT id, role FROM users WHERE username=? ', (username,))
         user_role=cursor.fetchone()
-         
+        encrypted_projects = data.get('projects')
         if user_role[1]=='1':
             projects= symmetric_decryption(encrypted_projects, session_key)
             projects_names=[]
@@ -161,6 +168,7 @@ def add_marks(client_socket,username,data,session_key,user_public_key):
         
         if doctor and doctor[1]=='2':
             subject_name= symmetric_decryption(data.get('subject_name'),session_key)
+            year= symmetric_decryption(data.get('year'),session_key)
             students_names= symmetric_decryption(data.get('students_names'),session_key)
             students_marks= symmetric_decryption(data.get('students_marks'),session_key)
     
@@ -171,7 +179,7 @@ def add_marks(client_socket,username,data,session_key,user_public_key):
             # signature= base64.b64encode(signature).decode()
             
             
-            merge_all_data= ' '.join([subject_name]+students_names+students_marks)
+            merge_all_data= ' '.join([subject_name+year]+students_names+students_marks)
             
             hash_data= hash_string(merge_all_data)
             
@@ -180,9 +188,9 @@ def add_marks(client_socket,username,data,session_key,user_public_key):
             if hash_data==hashed_data:
                 if verify_sign:
 
-                    cursor.execute('''INSERT INTO subjects (doctor_id, name) 
-                                VALUES (?,?)''',(doctor[0],subject_name))
-                    cursor.execute("SELECT id FROM subjects WHERE name=?",(subject_name,))
+                    cursor.execute('''INSERT INTO subjects (doctor_id, name, year) 
+                                VALUES (?,?,?)''',(doctor[0],subject_name, year))
+                    cursor.execute("SELECT id FROM subjects WHERE name=? AND year=?",(subject_name,year))
                     subject_id=cursor.fetchone()
                     if subject_id:
                         for data in zip([subject_id[0]] * len(students_names), students_names, students_marks):
@@ -213,6 +221,40 @@ def add_marks(client_socket,username,data,session_key,user_public_key):
         main_menu(client_socket, username, session_key,user_public_key)
 
 
+def show_marks(client_socket,username,data, session_key,user_public_key):
+    try:
+        user=data.get('username')
+        print(user)
+        conn = sqlite3.connect(DATABASE_NAME)
+        cursor = conn.cursor()
+        cursor.execute('''
+        SELECT marks.student_name, marks.student_mark, subjects.name, subjects.year
+        FROM marks
+        JOIN subjects ON marks.subject_id = subjects.id
+        WHERE marks.student_name = ?
+    ''', (user,))
+
+        results = cursor.fetchall()
+        print(results)
+        subject_mark_list = [(result[2], result[3], result[1]) for result in results]
+        print(subject_mark_list)
+        subject_mark_list=symmetric_encryption(subject_mark_list, session_key)
+
+        response={'list':subject_mark_list,'status':200}
+        print(112233)
+    except sqlite3.Error as e:
+            response = {"message":f"Error creating : {str(e)}", 'status':400}
+    except socket.error as e:
+            response = {"message": f"Error creating : {str(e)}", 'status':400}
+    except Exception as e:
+            response = {"message": f"Error creating : {str(e)}", 'status':400}
+    finally:
+        conn.close()
+        client_socket.sendall(json.dumps(response).encode())
+        print(response)
+        main_menu(client_socket, username, session_key,user_public_key)   
+
+
 def main_menu(client_socket, username, session_key,user_public_key):
     while True:
         request= client_socket.recv(50000).decode()
@@ -220,13 +262,14 @@ def main_menu(client_socket, username, session_key,user_public_key):
         action= data.get('action')
         print(f'{action} {username}')
         if action == 'send_project':
-            encrypted_projects = data.get('projects')
-            add_projects(client_socket,encrypted_projects, username, session_key,user_public_key)
+            
+            add_projects(client_socket,data , username, session_key,user_public_key)
         elif action == 'send_marks':
             add_marks(client_socket,username,data,session_key,user_public_key) 
+        elif action == 'show_marks':
+            show_marks(client_socket,username,data,session_key,user_public_key)
 
-
-def handle_client(client_socket):
+def handle_client(client_socket, server_certificate):
     
         data = client_socket.recv(10000).decode("utf-8")
 
@@ -234,7 +277,7 @@ def handle_client(client_socket):
         action = request.get("action")
     
         if action == "create_account":
-
+    
             username = request.get("username")
             password = request.get("password")
             create_account(client_socket, username, password)
@@ -259,12 +302,25 @@ def handle_client(client_socket):
 def start_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind(("127.0.0.1", 5000))
-    server_socket.listen(5)
+    server_socket.listen()
 
     create_database()
     global server_public_key, server_private_key
     server_private_key= generate_rsa_keys()
     server_public_key= server_private_key.public_key()
+    server_csr= generate_csr(server_private_key, 'Main Server')
+    
+    ca_socket= socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    ca_socket.connect(('127.0.0.1', 5001))
+    response= {'sender':'server', 'csr':server_csr.public_bytes(Encoding.PEM).decode()}
+    ca_socket.send(json.dumps(response).encode())
+    
+    request= ca_socket.recv(4096).decode()
+    data= json.loads(request)
+    
+    global server_certificate
+    server_certificate= data.get('signed_certificate')
+    server_certificate=x509.load_pem_x509_certificate(server_certificate.encode(), default_backend())
     print("Server listening on port 5000")
     
     while True:
@@ -272,7 +328,7 @@ def start_server():
         print(f"Accepted connection from {addr}")
 
         # Create a new thread for each client
-        client_thread = threading.Thread(target=handle_client, args=(client_socket,))
+        client_thread = threading.Thread(target=handle_client, args=(client_socket, server_certificate))
         client_thread.start()
 
 # root = tk.Tk()

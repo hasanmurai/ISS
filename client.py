@@ -2,14 +2,12 @@ import base64
 import hashlib
 import socket
 import json
+from tkinter import ttk
 import pandas as pd
 import tkinter as tk
 from tkinter import W, Radiobutton, messagebox
 from tkinter import filedialog
-
-import rsa
 from symmetric_key import generate_symmetric_key, symmetric_encryption, symmetric_decryption,hash_string
-# from _rsa_ import generate_rsa_keys, save_keys_to_file, load_public_key, load_private_key, rsa_encrypt, rsa_decrypt,rsa_signature 
 from asymmetric import *
 
 def copy_to_clipboard(message,dialog):
@@ -34,7 +32,8 @@ def create_account(entry_ip, entry_port, entry_username, entry_password):
         request_data = {"action": action, "username": username, "password": password}
   
         client_socket.send(json.dumps(request_data).encode())
-        response_data = client_socket.recv(1024)
+        print(request_data)
+        response_data = client_socket.recv(1024).decode()
         response = json.loads(response_data)
 
         messagebox.showinfo("Server Response", response['message'])
@@ -88,7 +87,8 @@ def login(entry_ip, entry_port, entry_username, entry_password):
         root.destroy()
     except Exception as e:
         messagebox.showerror("Error", f"An sderror occurred: {e}")
-
+        client_socket.close()
+        root.destroy()
     # finally:
     #     client_socket.close()
 
@@ -109,9 +109,6 @@ def complete_information(username, client_socket, entry_phone_number,
    
         encrypted_data = symmetric_encryption(request_data, key.encode())
       
-
-        # client_socket.send(json.dumps(encrypted_data).encode())
-        # response_json = json.dumps(encrypted_data, default=lambda x: str(x))
         client_socket.send(json.dumps(encrypted_data).encode())
 
         response_data = client_socket.recv(1024).decode()
@@ -127,8 +124,6 @@ def complete_information(username, client_socket, entry_phone_number,
             
             Create_Client_Keys_Frame(username, client_socket,role)
 
-            # Student_or_Professor(response["role"], "complete_information_frame")
-            
     except socket.error as e:
         messagebox.showerror("Connection Error", e)
     except Exception as e:
@@ -136,44 +131,62 @@ def complete_information(username, client_socket, entry_phone_number,
 
     # finally:
     #     client_socket.close()
-def generate_user_keys(client_socket,role,client_private_key_path):
+def generate_user_keys(client_socket,role,client_private_key_path, certificate_path, username):
     
     try:
 
         client_private_key= generate_rsa_keys() 
 
         save_private_key_to_file(client_private_key, client_private_key_path)
-        
-        handshake_client(client_socket,create_client_keys_frame,role,client_private_key_path)
-
+        client_csr= generate_csr(client_private_key, username)
+        ca_socket= socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        ca_socket.connect(('127.0.0.1', 5001))
+    
+        response= {'sender':'client','csr':client_csr.public_bytes(Encoding.PEM).decode()}
+        ca_socket.send(json.dumps(response).encode())
+        request= ca_socket.recv(1024).decode()
+        data= json.loads(request)
+        action=data.get('action')
+        if action== 'solve':
+            equation= data.get('equation')
+            Equation_Frame(username,ca_socket, equation,client_socket,certificate_path,client_private_key_path, role)
+        else:
+            messagebox.showerror('Error','CA server not available')
+            client_socket.close()
+            root.destroy()
     except Exception as e:
         messagebox.showerror("Error", f"An error has occurred: {e}")
         client_socket.close()
         root.destroy()
 
 
-def handshake_client(client_socket,frame,role,client_private_key_path):
+def handshake_client(username,client_socket,frame,role,client_private_key_path, certificate_path):
     try:
 
+        client_certificate= load_certificate(certificate_path)
         client_private_key= load_private_key_from_file(client_private_key_path)
+        print('gg')
         if client_private_key:
 
             client_public_key= client_private_key.public_key()
             client_public_key_str= public_key_to_str(client_public_key)
 
-            response = {"client_public_key": client_public_key_str}
+            response = {"client_public_key": client_public_key_str,
+                        'certificate':client_certificate.public_bytes(Encoding.PEM).decode()}
+            print(response)
+
             client_socket.send(json.dumps(response).encode())
-
-            request= client_socket.recv(1024).decode()
-
+            print('ggghh')
+            request= client_socket.recv(2048).decode()
+            print('ggghh')
             data= json.loads(request)
             
-            if data['message']==True:
+            if data['status'] == 200:
             
                 server_public_key_str= data.get("server_public_key")
                 server_public_key= str_to_public_key(server_public_key_str)
                 
-                create_session_key(client_socket, server_public_key, client_private_key, frame,role)
+                create_session_key(username,client_socket, server_public_key, client_private_key, frame,role)
             
             else:    
                 messagebox.showerror("Error",data.get('message'))
@@ -186,7 +199,7 @@ def handshake_client(client_socket,frame,role,client_private_key_path):
         # client_socket.close()
         # root.destroy()
 
-def create_session_key(client_socket, server_public_key, client_private_key, frame,role):
+def create_session_key(username,client_socket, server_public_key, client_private_key, frame,role):
     try:
 
         session_key= generate_symmetric_key()
@@ -205,7 +218,7 @@ def create_session_key(client_socket, server_public_key, client_private_key, fra
 
         if data.get('status')==200:
             messagebox.showinfo("Server Response", data.get('message'))
-            Student_or_Professor(frame,role,client_socket,session_key,client_private_key)
+            Student_or_Professor(username,frame,role,client_socket,session_key,client_private_key)
     
     except Exception as e:
         messagebox.showerror("Erddror", f"An error has occurred: {e}")
@@ -236,7 +249,7 @@ def send_project(projects,role,client_socket,session_key):
 
 
 
-def send_marks(subject_file_path, subject_name, role, client_socket, session_key, client_private_key):
+def send_marks(subject_file_path, subject_name, year ,role, client_socket, session_key, client_private_key):
     try:
         action='send_marks'
         
@@ -246,17 +259,18 @@ def send_marks(subject_file_path, subject_name, role, client_socket, session_key
         student_marks= pd.to_numeric(subject_file['mark'], errors='coerce').astype('Int64')
         student_marks=student_marks.astype(str).replace('<NA>', '').tolist() 
 
-        merge_all_data= ' '.join([subject_name]+student_names+student_marks)
+        merge_all_data= ' '.join([subject_name+year]+student_names+student_marks)
         hashed_data= hash_string(merge_all_data)
         doctor_signature= sign_message(hashed_data, client_private_key).decode('latin-1')
         # doctor_signature= base64.b64decode(doctor_signature)
-        enc_subject_name= symmetric_encryption(subject_name, session_key)        
+        enc_subject_name= symmetric_encryption(subject_name, session_key)  
+        enc_year= symmetric_encryption(year, session_key)      
         enc_student_names= symmetric_encryption(student_names, session_key)
         enc_student_marks= symmetric_encryption(student_marks, session_key)
 
 
         request= {'action':action,'data':hashed_data,'signature':doctor_signature, 'subject_name':enc_subject_name,
-                   'students_names':enc_student_names,'students_marks':enc_student_marks}
+                    'year':enc_year, 'students_names':enc_student_names,'students_marks':enc_student_marks}
         client_socket.send(json.dumps(request).encode())
         response= client_socket.recv(1024).decode()
         data= json.loads(response)
@@ -273,15 +287,89 @@ def send_marks(subject_file_path, subject_name, role, client_socket, session_key
         messagebox.showerror("Error", f"An 00error has occurred: {e}")
 
 
+def show_marks(client_socket,username,role,session_key):
+
+    try:
+        action='show_marks'
+        print(role)
+        print(type(role))
+        if role=='1':
+            response= {'action' : action,'username':username}
+            print(2)
+            client_socket.send(json.dumps(response).encode())
+            print(311)
+            request= client_socket.recv(4000).decode()
+            print(31)
+            data= json.loads(request)
+            print(321)
+            if data.get('status')==200:
+                print(331)
+                list=data.get('list')
+                list=[tuple(item) for item in list]
+
+                print(list)
+                list=symmetric_decryption(list,session_key)
+                print(list)
+                show_marks_frame(list) 
+                print(4)               
+            else:
+                messagebox.showerror("Connection Error", data.get('message'))
+        else:
+            messagebox.showerror("Connection Error", 'ffdd')   
+    except socket.error as e:
+        messagebox.showerror("Connection Error", e)
+    except Exception as e:
+        messagebox.showerror("Error", f"An 00error has occurred: {e}")
+
 
 def clear_widgets(frame):
     for widget in frame.winfo_children():
         widget.destroy()
 
+def Equation_Frame(username,ca_socket, equation,client_socket,certificate_path,client_private_key_path, role):
+    def send():
+        
+        if answer_value.get().strip():
+            dialog.destroy()  
+            client_private_key= load_private_key_from_file(client_private_key_path)
+            sign_answer= sign_message(answer_value.get(),client_private_key).decode('latin-1')
+            ca_socket.send(json.dumps({'answer':sign_answer}).encode())
+            request= ca_socket.recv(4096).decode()
+            data= json.loads(request)
+            
+            if data.get('status')== 200:
+                client_certificate= data.get('signed_certificate')
+                client_certificate= x509.load_pem_x509_certificate(client_certificate.encode(), default_backend())
+                save_certificate(client_certificate, certificate_path)
+                handshake_client(username,client_socket,create_client_keys_frame,role,client_private_key_path, certificate_path)
+                messagebox.showinfo('Server',"private key and certificate created successfully")
+                
+            
+            else:
+                messagebox.showerror('Error', data.get('message'))   
+                       
+        else:
+            messagebox.showerror('Error','please enter answer')    
 
-def Student_or_Professor(frame,role,client_socket,session_key,client_private_key):
+    dialog = tk.Toplevel(root)
+    dialog.title("Verify")
+
+    answer_value= tk.StringVar()
+    send_statue= tk.BooleanVar()
+
+    tk.Label(dialog, text=equation).grid(row=1, column=1 ,padx=20, pady=20)
+    tk.Label(dialog, text="Enter Answer:").grid(row=2, column=1, padx=5, pady=5)
+  
+    entry_answer = tk.Entry(dialog, textvariable= answer_value)
+    entry_answer.grid(row=2, column=2, padx=5, pady=5)  
+    copy_button = tk.Button(dialog, text="Enter Answer: ", command=lambda: send() )
+    copy_button.grid(row=3, column=2)
+    
+    
+
+def Student_or_Professor(username,frame,role,client_socket,session_key,client_private_key):
     if role == '1':
-        Student_Frame(frame,role,client_socket,session_key)
+        Student_Frame(username,frame,role,client_socket,session_key)
     elif role == '2':
         Professor_Frame(frame, role, client_socket, session_key,client_private_key)
 
@@ -373,9 +461,9 @@ def Create_Client_Keys_Frame(username, client_socket,role):
     def save_file(username):
 
         file_path = filedialog.asksaveasfilename(defaultextension=".pem",initialfile=f"{username}_private_key.pem" , filetypes=[("PEM files", "*.pem")])
-        
+        certificate_file_path= filedialog.asksaveasfilename(defaultextension=".pem",initialfile=f"{username}_certificate.pem" , filetypes=[("PEM files", "*.pem")])
         client_private_key_path.set(file_path)
-
+        certificate_path.set(certificate_file_path)
 
     clear_widgets(main_frame)
     
@@ -383,15 +471,18 @@ def Create_Client_Keys_Frame(username, client_socket,role):
     create_client_keys_frame.grid_propagate(False)
 
     client_private_key_path=tk.StringVar()
+    certificate_path= tk.StringVar()
 
-    save_public_key_button = tk.Button(create_client_keys_frame, text="Save Private Key File",
+    save_public_key_button = tk.Button(create_client_keys_frame, text="Path to save Private Key and certificate",
                                         command=lambda:save_file(username))
     save_public_key_button.grid(row=1, column= 0, pady=10)
+    
     # save_private_key_button = tk.Button(create_client_keys_frame, text="Save Private Key File", command=lambda:save_file(2, username))
     # save_private_key_button.grid(row=2, column= 0, pady=10)
     
     button_continue = tk.Button(create_client_keys_frame, text="Continue", command=lambda:
-                                generate_user_keys(client_socket, role, client_private_key_path.get()))
+                                generate_user_keys(client_socket, role, client_private_key_path.get(),
+                                                   certificate_path.get(), username))
     button_continue.grid(row=3, column=1, pady=10)
 
 
@@ -400,18 +491,20 @@ def Load_Client_Keys_Frame(client_socket,role,username):
     def load_file(key):
         file_path = filedialog.askopenfilename(title="Select an .pem file", filetypes=[("PEM files", "*.pem")])
         if key==1:
-            client_public_key_path.set(file_path)
+            certificate_path.set(file_path)
+            print(file_path)
         elif key==2:
             client_private_key_path.set(file_path)
+            print(file_path)
 
-    def empty_path(client_public_key_path,client_private_key_path,client_socket,role):
-        client_public_key_path_value=client_public_key_path.get()
+    def empty_path(certificate_path,client_private_key_path,client_socket,role):
+        certificate_path_value=certificate_path.get()
         client_private_key_path_value=client_private_key_path.get()
-        print(client_public_key_path)
-        print(client_private_key_path)
+        print(certificate_path_value)
+        print(client_private_key_path_value)
 
-        if client_public_key_path_value.strip() and client_private_key_path_value.strip():
-           handshake_client(client_socket, load_keys_frame,role,client_private_key_path_value)
+        if certificate_path_value.strip() and client_private_key_path_value.strip():
+           handshake_client(username,client_socket, load_keys_frame,role,client_private_key_path_value,certificate_path_value)
         else:
              messagebox.showerror('Error', 'empty path')  
 
@@ -419,16 +512,16 @@ def Load_Client_Keys_Frame(client_socket,role,username):
     load_keys_frame.tkraise()
     load_keys_frame.grid_propagate(False)
 
-    client_public_key_path = tk.StringVar()
+    certificate_path = tk.StringVar()
     client_private_key_path = tk.StringVar()
 
-    load_public_key_button = tk.Button(load_keys_frame, text="Load Public Key File", command=lambda:load_file(1))
+    load_public_key_button = tk.Button(load_keys_frame, text="Load Certificate File", command=lambda:load_file(1))
     load_public_key_button.grid(row=1, column= 0, pady=10)
     load_private_key_button = tk.Button(load_keys_frame, text="Load Private Key File", command=lambda:load_file(2))
     load_private_key_button.grid(row=2, column= 0, pady=10)
 
     button_continue = tk.Button(load_keys_frame, text="Continue", command=lambda:
-                                empty_path(client_public_key_path,client_private_key_path,client_socket,role))
+                                empty_path(certificate_path,client_private_key_path,client_socket,role))
     button_continue.grid(row=3, column=1, pady=10)
 
 
@@ -491,7 +584,7 @@ def send_project_frame(role,client_socket,session_key):
 
 
 
-def Student_Frame(frame,role,client_socket,session_key):
+def Student_Frame(username,frame,role,client_socket,session_key):
     
     clear_widgets(frame)
     
@@ -502,7 +595,8 @@ def Student_Frame(frame,role,client_socket,session_key):
                                       command= lambda: send_project_frame(role,client_socket,session_key))
     enter_projcet_button.grid(row=0, column= 1, pady=10)
 
-    show_marks_button= tk.Button(student_frame, text="Show Marks")
+    show_marks_button= tk.Button(student_frame, text="Show Marks",
+                                 command= lambda: show_marks(client_socket,username,role,session_key))
     show_marks_button.grid(row=1, column= 0, pady=10)
 
 def Professor_Frame(frame,role,client_socket,session_key,client_private_key):
@@ -522,8 +616,8 @@ def send_subject_frame(client_socket,session_key,role,client_private_key):
         
 
     def check_marks():
-        if subject_entry_value.get().strip():
-            send_marks(subject_file_path.get(),subject_entry_value.get(),role,client_socket,session_key,client_private_key)
+        if subject_entry_value.get().strip() and year.get().strip():
+            send_marks(subject_file_path.get(),subject_entry_value.get(),year.get(),role,client_socket,session_key,client_private_key)
             send_marks_widget.destroy()
         else:
             messagebox.showerror('Error', 'Empty input') 
@@ -535,17 +629,39 @@ def send_subject_frame(client_socket,session_key,role,client_private_key):
     
     subject_file_path=tk.StringVar()
     subject_entry_value=tk.StringVar()
+    year=tk.StringVar()
 
     tk.Label(send_marks_widget, text="subject Name:").grid(row=0, column=0, padx=5, pady=5)
 
     subject_entry = tk.Entry(send_marks_widget,textvariable=subject_entry_value,width=50, bd=2)
     subject_entry.grid(row=0, column=1, padx=5, pady=5)
+    
+    tk.Label(send_marks_widget, text="year:").grid(row=1, column=0, padx=5, pady=5)
 
+    subject_entry = tk.Entry(send_marks_widget,textvariable=year,width=50, bd=2)
+    subject_entry.grid(row=1, column=1, padx=5, pady=5)
+
+   
    
     add_marks_button=tk.Button(send_marks_widget, text="Add", command=lambda: add_mark_file())
     add_marks_button.grid(row=2, column=0, pady=10)
     send_marks_button=tk.Button(send_marks_widget, text="Send", command=lambda: check_marks())
     send_marks_button.grid(row=2, column=1, pady=10)
+
+def show_marks_frame(list):
+    marks_frame = tk.Tk()
+    marks_frame.title("Data Display")
+
+    tree = ttk.Treeview(marks_frame, columns=('Item 1', 'Item 2', 'Item 3'), show='headings')
+    tree.heading('Item 1', text='subject name')
+    tree.heading('Item 2', text='year')
+    tree.heading('Item 3', text='student mark')
+
+    for item in list:
+        tree.insert("", "end", values=item)
+
+    # Pack and run the Tkinter main loop
+    tree.pack(expand=True, fill=tk.BOTH)
 
 
 root = tk.Tk()

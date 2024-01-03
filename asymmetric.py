@@ -2,10 +2,9 @@ import os
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.x509 import Name, NameAttribute, CertificateSigningRequestBuilder
-from cryptography.x509.oid import NameOID
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography import x509
 
 def generate_rsa_keys():
     private_key = rsa.generate_private_key(
@@ -111,3 +110,38 @@ def verify_signature(message, signature, public_key):
     except Exception:
         return False
 
+def generate_csr(private_key, common_name):
+    builder = x509.CertificateSigningRequestBuilder()
+    builder = builder.subject_name(x509.Name([
+        x509.NameAttribute(x509.NameOID.COUNTRY_NAME, u"US"),
+        x509.NameAttribute(x509.NameOID.STATE_OR_PROVINCE_NAME, u"CA"),
+        x509.NameAttribute(x509.NameOID.LOCALITY_NAME, u"San Francisco"),
+        x509.NameAttribute(x509.NameOID.ORGANIZATION_NAME, u"My Organization"),
+        x509.NameAttribute(x509.NameOID.COMMON_NAME, common_name),
+    ]))
+    csr = builder.sign(private_key, hashes.SHA256(), default_backend())
+
+    return csr
+
+def save_certificate(certificate, file_path):
+    with open(file_path, "wb") as cert_file:
+        cert_file.write(certificate.public_bytes(Encoding.PEM))
+
+def load_certificate(file_path):
+    with open(file_path, "rb") as cert_file:
+        certificate_data = cert_file.read()
+    certificate = x509.load_pem_x509_certificate(certificate_data, default_backend())
+    return certificate
+
+def verify_certificate(certificate, public_key):
+    try:
+        public_key.verify(
+            certificate.signature,
+            certificate.tbs_certificate_bytes,
+            padding.PKCS1v15(),
+            certificate.signature_hash_algorithm,
+        )
+        return True
+    except Exception as e:
+        print(f"Verification failed")
+        return False

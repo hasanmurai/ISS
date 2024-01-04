@@ -1,12 +1,11 @@
-import base64
 import socket
 import json
 import sqlite3
 import threading
-from asymmetric import *
-from auth import create_database, create_account, login, complete_information
+from Asymmetric_Encryption import *
+from auth import *
 
-from symmetric_key import symmetric_encryption, symmetric_decryption, hash_string
+from Symmetric_Encryption import symmetric_encryption, symmetric_decryption, hash_string
 from datetime import datetime
 
 
@@ -17,51 +16,22 @@ def get_date():
 
 ############################################################################################################
 
-# def generate_symmetric_key():
-#     key=Fernet.generate_key()
-#     return key
-
-# def symmetric_encryption(data, key):
-#     fernet = Fernet(key)
-#     encrypted_data = {}
-
-#     for field, value in data.items():
-#         encrypted_data[field] = fernet.encrypt(value.encode()).decode()
-
-#     return encrypted_data
-
-# def symmetric_decryption(encrypted_data, key):
-#     fernet = Fernet(key)
-#     decrypted_data = {}
-
-#     for field, value in encrypted_data.items():
-#         decrypted_data[field] = fernet.decrypt(value)  
-        
-#     return decrypted_data
-
-############################################################################################################
-
-# def create_keys():
-DATABASE_NAME="ISS.db"
 def handshake_server(client_socket, username):
     try:
 
         request = client_socket.recv(8192).decode()
         data = json.loads(request)
-        if data.get('action')=='close':
-            print(f"{data.get('username')} disconnet!")
-            client_socket.close()
-        else:
-            print(1)
+        if data.get('action')=='handshake':
             client_certificate= data.get('certificate')
-            print(2)
             client_certificate=x509.load_pem_x509_certificate(client_certificate.encode(), default_backend())    
-            print(3)
             verify_client_cert=verify_certificate(client_certificate, server_certificate.public_key())
-            if verify_client_cert: 
-                print(4)
-                user_public_key_str= data.get("client_public_key")
+            
+            username_from_certificate = client_certificate.subject.get_attributes_for_oid(x509.NameOID.COMMON_NAME)[0].value
+            
+
+            if verify_client_cert and username == username_from_certificate: 
                 
+                user_public_key_str= data.get("client_public_key")
                 server_public_key_str=public_key_to_str(server_public_key)
                 
                 response = {'server_public_key':server_public_key_str,'status':200}  
@@ -69,7 +39,8 @@ def handshake_server(client_socket, username):
                 session_key_recv(username, client_socket, user_public_key_str)
             else:
                 response= {'message':'unvalid certificate','status':400}
-
+        else:
+             response={'message':'wrong action','status':400}
     except Exception as e:
         response={"message": f"An error occurred: {str(e)}", "status":400}
     finally :
@@ -134,16 +105,20 @@ def add_projects(client_socket, data, username, session_key,user_public_key):
         user_role=cursor.fetchone()
         encrypted_projects = data.get('projects')
         if user_role[1]=='1':
+            encrypted_projects = [(project[0], project[1]) for project in encrypted_projects]
             projects= symmetric_decryption(encrypted_projects, session_key)
+
             projects_names=[]
             for item in projects:
                 cursor.execute('INSERT INTO users_projects (user_id, project_name, project_info) VALUES (?, ?, ?)',
                         (user_role[0], item[0], item[1]))
                 conn.commit()
                 projects_names.append(item[0])
-            response= {'message':f'{username} add projects {projects_names} successfully', 'status':200}
+            
+            response= {'message':f'{username} added projects {projects_names} successfully', 'status':200}
             
             response= symmetric_encryption(response,session_key)
+            print(f'{username} added projects {projects_names}')
         else:
             response= {'message':'user not allowed','status':400}
             
@@ -175,10 +150,7 @@ def add_marks(client_socket,username,data,session_key,user_public_key):
             hashed_data= data.get('data')
             
             signature= data.get('signature').encode('latin-1')
-           
-            # signature= base64.b64encode(signature).decode()
-            
-            
+
             merge_all_data= ' '.join([subject_name+year]+students_names+students_marks)
             
             hash_data= hash_string(merge_all_data)
@@ -235,9 +207,7 @@ def show_marks(client_socket,username,data, session_key,user_public_key):
     ''', (user,))
 
         results = cursor.fetchall()
-        print(results)
         subject_mark_list = [(result[2], result[3], result[1]) for result in results]
-        print(subject_mark_list)
         subject_mark_list=symmetric_encryption(subject_mark_list, session_key)
 
         response={'list':subject_mark_list,'status':200}
@@ -260,7 +230,7 @@ def main_menu(client_socket, username, session_key,user_public_key):
         request= client_socket.recv(50000).decode()
         data= json.loads(request)
         action= data.get('action')
-        print(f'{action} {username}')
+        print(f'{username} want to {action}')
         if action == 'send_project':
             
             add_projects(client_socket,data , username, session_key,user_public_key)
@@ -268,8 +238,11 @@ def main_menu(client_socket, username, session_key,user_public_key):
             add_marks(client_socket,username,data,session_key,user_public_key) 
         elif action == 'show_marks':
             show_marks(client_socket,username,data,session_key,user_public_key)
+        else:
+            response = {"message": "Invalid action",'status':400}
+            client_socket.send(json.dumps(response).encode("utf-8"))    
 
-def handle_client(client_socket, server_certificate):
+def handle_client(client_socket):
     
         data = client_socket.recv(10000).decode("utf-8")
 
@@ -326,9 +299,7 @@ def start_server():
     while True:
         client_socket, addr = server_socket.accept()
         print(f"Accepted connection from {addr}")
-
-        # Create a new thread for each client
-        client_thread = threading.Thread(target=handle_client, args=(client_socket, server_certificate))
+        client_thread = threading.Thread(target=handle_client, args=(client_socket))
         client_thread.start()
 
 # root = tk.Tk()

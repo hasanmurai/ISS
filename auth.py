@@ -1,8 +1,6 @@
 import sqlite3
 import json
-
-import bcrypt
-from symmetric_key import symmetric_encryption, symmetric_decryption, generate_symmetric_key
+from Symmetric_Encryption import symmetric_encryption, symmetric_decryption, generate_symmetric_key
 
 
 DATABASE_NAME = "ISS.db"
@@ -68,22 +66,10 @@ def create_database():
     conn.commit()
     conn.close()
 
-# def account_exists(username):
-#     conn = sqlite3.connect(DATABASE_NAME)
-#     cursor = conn.cursor()
-#     cursor.execute("SELECT * FROM users WHERE username=?", (username,))
-#     account = cursor.fetchone()
-#     conn.close()
-
-#     return account is not None
 
 def create_account(client_socket, username,password):
     try:
                 conn = sqlite3.connect(DATABASE_NAME)
-
-            # if account_exists(username):
-            #     response = {"message": "Username already exists","encryption_key":False}
-            # else:
                 key=generate_symmetric_key()
                 cursor = conn.cursor()
                 cursor.execute('''

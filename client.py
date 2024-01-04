@@ -1,5 +1,3 @@
-import base64
-import hashlib
 import socket
 import json
 from tkinter import ttk
@@ -7,15 +5,14 @@ import pandas as pd
 import tkinter as tk
 from tkinter import W, Radiobutton, messagebox
 from tkinter import filedialog
-from symmetric_key import generate_symmetric_key, symmetric_encryption, symmetric_decryption,hash_string
-from asymmetric import *
+from Symmetric_Encryption import generate_symmetric_key, symmetric_encryption, symmetric_decryption,hash_string
+from Asymmetric_Encryption import *
 
 def copy_to_clipboard(message,dialog):
     root.clipboard_clear()
     root.clipboard_append(message)
     root.update()
     dialog.destroy()
-
 
 
 def create_account(entry_ip, entry_port, entry_username, entry_password):
@@ -32,13 +29,11 @@ def create_account(entry_ip, entry_port, entry_username, entry_password):
         request_data = {"action": action, "username": username, "password": password}
   
         client_socket.send(json.dumps(request_data).encode())
-        print(request_data)
         response_data = client_socket.recv(1024).decode()
         response = json.loads(response_data)
 
         messagebox.showinfo("Server Response", response['message'])
-
-        # Display the encryption key in a custom dialog
+        
         if response['encryption_key']:
             show_encryption_key(response['encryption_key'])
             Complete_Information_Frame(client_socket, username)
@@ -49,9 +44,6 @@ def create_account(entry_ip, entry_port, entry_username, entry_password):
         root.destroy()
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
-    # finally:
-    #     client_socket.close()
-
 
 
 
@@ -75,7 +67,6 @@ def login(entry_ip, entry_port, entry_username, entry_password):
         messagebox.showinfo("Server Response", response['message'])
         if response["status"]==200:
             role= response['role']
-            print(role)
             Load_Client_Keys_Frame(client_socket,role,username)            
             
         else:
@@ -89,9 +80,6 @@ def login(entry_ip, entry_port, entry_username, entry_password):
         messagebox.showerror("Error", f"An sderror occurred: {e}")
         client_socket.close()
         root.destroy()
-    # finally:
-    #     client_socket.close()
-
 
 def complete_information(username, client_socket, entry_phone_number,
                          entry_national_number, entry_address, entry_role, entry_key):
@@ -165,20 +153,16 @@ def handshake_client(username,client_socket,frame,role,client_private_key_path, 
 
         client_certificate= load_certificate(certificate_path)
         client_private_key= load_private_key_from_file(client_private_key_path)
-        print('gg')
         if client_private_key:
 
             client_public_key= client_private_key.public_key()
             client_public_key_str= public_key_to_str(client_public_key)
 
-            response = {"client_public_key": client_public_key_str,
+            response = {'action':'handshake' ,"client_public_key": client_public_key_str,
                         'certificate':client_certificate.public_bytes(Encoding.PEM).decode()}
-            print(response)
-
+            
             client_socket.send(json.dumps(response).encode())
-            print('ggghh')
             request= client_socket.recv(2048).decode()
-            print('ggghh')
             data= json.loads(request)
             
             if data['status'] == 200:
@@ -196,8 +180,6 @@ def handshake_client(username,client_socket,frame,role,client_private_key_path, 
         messagebox.showerror("Connection Error", "No dd available")
     except Exception as e:
         messagebox.showerror("Error", f"An error has occurred: {e}")
-        # client_socket.close()
-        # root.destroy()
 
 def create_session_key(username,client_socket, server_public_key, client_private_key, frame,role):
     try:
@@ -206,7 +188,7 @@ def create_session_key(username,client_socket, server_public_key, client_private
         encrypted_session_key= asymmetric_encryption(session_key.decode(), server_public_key).decode('latin-1')
         message= asymmetric_encryption('True', server_public_key).decode('latin-1')
 
-        request= {'message': message, "session_key": encrypted_session_key} #base64.b64encode(encrypt_session_key).decode()
+        request= {'message': message, "session_key": encrypted_session_key} 
         
         client_socket.send(json.dumps(request).encode())
 
@@ -214,7 +196,6 @@ def create_session_key(username,client_socket, server_public_key, client_private
         response=json.loads(response)
 
         data=symmetric_decryption(response, session_key)  
-        print('dd')
 
         if data.get('status')==200:
             messagebox.showinfo("Server Response", data.get('message'))
@@ -226,7 +207,7 @@ def create_session_key(username,client_socket, server_public_key, client_private
         # client_socket.close()
         # root.destroy()
 
-def send_project(projects,role,client_socket,session_key):
+def send_projects(projects,role,client_socket,session_key):
     try:
         action='send_project'
         encrypted_projects= symmetric_encryption(projects, session_key)
@@ -262,7 +243,6 @@ def send_marks(subject_file_path, subject_name, year ,role, client_socket, sessi
         merge_all_data= ' '.join([subject_name+year]+student_names+student_marks)
         hashed_data= hash_string(merge_all_data)
         doctor_signature= sign_message(hashed_data, client_private_key).decode('latin-1')
-        # doctor_signature= base64.b64decode(doctor_signature)
         enc_subject_name= symmetric_encryption(subject_name, session_key)  
         enc_year= symmetric_encryption(year, session_key)      
         enc_student_names= symmetric_encryption(student_names, session_key)
@@ -291,27 +271,17 @@ def show_marks(client_socket,username,role,session_key):
 
     try:
         action='show_marks'
-        print(role)
-        print(type(role))
         if role=='1':
             response= {'action' : action,'username':username}
-            print(2)
             client_socket.send(json.dumps(response).encode())
-            print(311)
             request= client_socket.recv(4000).decode()
-            print(31)
             data= json.loads(request)
-            print(321)
             if data.get('status')==200:
-                print(331)
                 list=data.get('list')
                 list=[tuple(item) for item in list]
 
-                print(list)
                 list=symmetric_decryption(list,session_key)
-                print(list)
                 show_marks_frame(list) 
-                print(4)               
             else:
                 messagebox.showerror("Connection Error", data.get('message'))
         else:
@@ -492,16 +462,12 @@ def Load_Client_Keys_Frame(client_socket,role,username):
         file_path = filedialog.askopenfilename(title="Select an .pem file", filetypes=[("PEM files", "*.pem")])
         if key==1:
             certificate_path.set(file_path)
-            print(file_path)
         elif key==2:
             client_private_key_path.set(file_path)
-            print(file_path)
 
     def empty_path(certificate_path,client_private_key_path,client_socket,role):
         certificate_path_value=certificate_path.get()
         client_private_key_path_value=client_private_key_path.get()
-        print(certificate_path_value)
-        print(client_private_key_path_value)
 
         if certificate_path_value.strip() and client_private_key_path_value.strip():
            handshake_client(username,client_socket, load_keys_frame,role,client_private_key_path_value,certificate_path_value)
@@ -558,7 +524,7 @@ def send_project_frame(role,client_socket,session_key):
         if not projects:
             messagebox.showerror("Error", "No Projects been added")
         else:
-            send_project(projects,role,client_socket,session_key)
+            send_projects(projects,role,client_socket,session_key)
             send.destroy()
 
 

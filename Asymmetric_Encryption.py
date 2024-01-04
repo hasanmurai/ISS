@@ -37,22 +37,13 @@ def str_to_private_key(key):
 
 
 def save_private_key_to_file(private_key, key_path):
-    # Save public key to a file
-    # with open('your_public_key.pem', 'wb') as public_key_file:
-    #     public_key_file.write(public_key.public_bytes(
-    #         encoding=serialization.Encoding.PEM,
-    #         format=serialization.PublicFormat.SubjectPublicKeyInfo
-    #     ))
 
-    # Save private key to a file (Keep private key secure and do not share)
     with open(key_path, 'wb') as private_key_file:
         private_key_file.write(private_key_to_str(private_key).encode())
 
 
 def load_private_key_from_file(key_path):
-    # Load keys from files
-    # with open('your_public_key.pem', 'rb') as public_key_file:
-    #     public_key = serialization.load_pem_public_key(public_key_file.read(), backend=default_backend())
+
     if os.path.exists(key_path):
         with open(key_path, 'rb') as private_key_file:
             private_key = serialization.load_pem_private_key(private_key_file.read(), password=None, backend=default_backend())

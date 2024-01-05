@@ -62,7 +62,7 @@ def session_key_recv(username, client_socket, user_public_key_str):
             session_key= data.get("session_key")
             session_key= asymmetric_decryption(session_key.encode('latin-1'), server_private_key)
             
-            response= {"message":'accept, session started',"status": 200}
+            response= {"message":'accept, session started',"accept": 'true'}
 
             response= symmetric_encryption(response, session_key.encode())
             print(f'start session with {username}')
@@ -299,7 +299,7 @@ def start_server():
     while True:
         client_socket, addr = server_socket.accept()
         print(f"Accepted connection from {addr}")
-        client_thread = threading.Thread(target=handle_client, args=(client_socket))
+        client_thread = threading.Thread(target=handle_client, args=(client_socket,))
         client_thread.start()
 
 # root = tk.Tk()

@@ -117,8 +117,6 @@ def complete_information(username, client_socket, entry_phone_number,
     except Exception as e:
         messagebox.showerror("Error", f"An error has occurred: {e}")
 
-    # finally:
-    #     client_socket.close()
 def generate_user_keys(client_socket,role,client_private_key_path, certificate_path, username):
     
     try:
@@ -197,15 +195,13 @@ def create_session_key(username,client_socket, server_public_key, client_private
 
         data=symmetric_decryption(response, session_key)  
 
-        if data.get('status')==200:
+        if data.get('accept')=='true':
             messagebox.showinfo("Server Response", data.get('message'))
             Student_or_Professor(username,frame,role,client_socket,session_key,client_private_key)
     
     except Exception as e:
         messagebox.showerror("Erddror", f"An error has occurred: {e}")
 
-        # client_socket.close()
-        # root.destroy()
 
 def send_projects(projects,role,client_socket,session_key):
     try:
@@ -353,12 +349,10 @@ def Main_Frame():
 
     tk.Label(main_frame, text="Server IP:").grid(row=0, column=0, padx=5, pady=5)
     entry_ip = tk.Entry(main_frame)
-    entry_ip.insert(0,'127.0.0.1')
     entry_ip.grid(row=0, column=1, padx=5, pady=5)
 
     tk.Label(main_frame, text="Server Port:").grid(row=1, column=0, padx=5, pady=5)
     entry_port = tk.Entry(main_frame)
-    entry_port.insert(0,'5000')
 
     entry_port.grid(row=1, column=1, padx=5, pady=5)
 
@@ -447,9 +441,7 @@ def Create_Client_Keys_Frame(username, client_socket,role):
                                         command=lambda:save_file(username))
     save_public_key_button.grid(row=1, column= 0, pady=10)
     
-    # save_private_key_button = tk.Button(create_client_keys_frame, text="Save Private Key File", command=lambda:save_file(2, username))
-    # save_private_key_button.grid(row=2, column= 0, pady=10)
-    
+
     button_continue = tk.Button(create_client_keys_frame, text="Continue", command=lambda:
                                 generate_user_keys(client_socket, role, client_private_key_path.get(),
                                                    certificate_path.get(), username))
@@ -489,20 +481,6 @@ def Load_Client_Keys_Frame(client_socket,role,username):
     button_continue = tk.Button(load_keys_frame, text="Continue", command=lambda:
                                 empty_path(certificate_path,client_private_key_path,client_socket,role))
     button_continue.grid(row=3, column=1, pady=10)
-
-
-
-# def load_keys():
-#     clear_widgets(create_client_keys_frame)
-
-#     load_keys_frame.tkraise()
-#     load_keys_frame.grid_propagate(False)
-#     load_keys_frame.title("File Loader")
-
-#     load_public_key_button = tk.Button(load_keys_frame, text="Load Public Key File", command=lambda:load_file(1))
-#     load_public_key_button.grid(row=1, column= 0, pady=10)
-#     load_private_key_button = tk.Button(load_keys_frame, text="Load Private Key File", command=lambda:load_file(2))
-#     load_private_key_button.grid(row=2, column= 0, pady=10)
 
 def send_project_frame(role,client_socket,session_key):
     
@@ -549,7 +527,6 @@ def send_project_frame(role,client_socket,session_key):
     send_button.grid(row=2, column=1, pady=10)
 
 
-
 def Student_Frame(username,frame,role,client_socket,session_key):
     
     clear_widgets(frame)
@@ -559,7 +536,7 @@ def Student_Frame(username,frame,role,client_socket,session_key):
 
     enter_projcet_button = tk.Button(student_frame, text="Enter Project",
                                       command= lambda: send_project_frame(role,client_socket,session_key))
-    enter_projcet_button.grid(row=0, column= 1, pady=10)
+    enter_projcet_button.grid(row=0, column= 0, pady=10)
 
     show_marks_button= tk.Button(student_frame, text="Show Marks",
                                  command= lambda: show_marks(client_socket,username,role,session_key))
@@ -573,7 +550,7 @@ def Professor_Frame(frame,role,client_socket,session_key,client_private_key):
 
     enter_marks_button = tk.Button(professor_frame, text="Enter Marks",
                                       command= lambda: send_subject_frame(client_socket,session_key,role,client_private_key))
-    enter_marks_button.grid(row=0, column= 1, pady=10)
+    enter_marks_button.grid(row=0, column= 0, pady=10)
 
 def send_subject_frame(client_socket,session_key,role,client_private_key):
     def add_mark_file():
@@ -626,7 +603,6 @@ def show_marks_frame(list):
     for item in list:
         tree.insert("", "end", values=item)
 
-    # Pack and run the Tkinter main loop
     tree.pack(expand=True, fill=tk.BOTH)
 
 
@@ -635,14 +611,10 @@ root = tk.Tk()
 root.title("Welcome")
 root.eval("tk::PlaceWindow . center")
 
-# x = root.winfo_screenwidth() // 3
-# y = int(root.winfo_screenheight() * 0.2)
-# root.geometry('300x400+' + str(x) + '+' + str(y))
 root.grid_rowconfigure(0, weight=1)
 root.grid_rowconfigure(1, weight=0)
 root.grid_columnconfigure(0, weight=1)
 
-# create a frame widgets
 main_frame = tk.Frame(root, width=300, height=400, bg="#3d6466")
 complete_information_frame = tk.Frame(root,width=300, height=400, bg="#3d6466")
 load_keys_frame = tk.Frame(root,width=300, height=400, bg="#3d6466")
